@@ -4,10 +4,9 @@ import java.lang.reflect.Field;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
-import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
-import java.util.Queue;
+import java.util.Objects;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -55,12 +54,15 @@ public class SimpleExecutionPlanService implements ExecutionPlanService {
 			//check the type
 			if (job instanceof FlowJob) {
 				//we're good
+				Field field = job.getClass().getDeclaredField("flow");
+				field.setAccessible(true);
+				Flow flow = (Flow) field.get(job);
+				//now we need to get the states, change, and set back
+//				resetFlow(flow, stepNames);
+				changeFlow(flow,stepNames);
+			} else {
+				logger.error("not a flow job {}",job.getClass().getName());
 			}//end if
-			Field field = job.getClass().getDeclaredField("flow");
-			field.setAccessible(true);
-			Flow flow = (Flow) field.get(job);
-			//now we need to get the states, change, and set back
-			resetFlow(flow, stepNames);
 		}
 		catch (Exception e) {
 			logger.error("error mapping new steps",e);
@@ -71,131 +73,128 @@ public class SimpleExecutionPlanService implements ExecutionPlanService {
 		this.jobLocator = jobLocator;
 	}
 
-	private void resetFlow(Flow flow,List<String> stepNames) throws Exception {
-		resetFlow(flow,stepNames,Boolean.FALSE);
-	}
-	
-	private void resetFlow(Flow flow,List<String> stepNames,boolean split) throws Exception {
+	private Flow changeFlow(Flow flow,List<String> stepNames) throws Exception {
+		//check
+		if (stepNames.isEmpty()) {
+			return flow;//nothing to do
+		}//end if
 		//init
-		int changeCount = 0;
-		Queue<String> splits = new LinkedList<String>();
-		//now we need to get the states, change, and set back
+		List<StateTransition> stateTransitions = new ArrayList<StateTransition>();
+		List<String> remainderNames = new ArrayList<String>();
+		//need to get the 'states' at this 'level'
 		Collection<State> states = ((SimpleFlow)flow).getStates();
-		//get the statetransitions at present
-		List<StateTransition> stateTransitions = getStateTransitions(flow);
-		//create the name of names to states
 		Map<String,State> stateMap = new HashMap<String,State>();
+		Map<String,String> stateNameMap = new HashMap<String,String>();
+		//loop
 		for (State state : states) {
+			//add
 			if (state instanceof StepState
 					|| state instanceof DecisionState
 					|| state instanceof SplitState) {
-				stateMap.put(state.getName(),state);
-				if (state instanceof SplitState) {
-					splits.add(state.getName());
+				stateMap.put(state.getName(), state);
+				//check name
+				if (state instanceof StepState) {
+					stateNameMap.put(((StepState)state).getStep().getName(),state.getName());
 				}//end if
-			}//end if
-		}//end if				
-		
-		//get a map to 'translate' the name
-		Map<String,String> stateNameMap = this.getStepNamesForStates(flow);
-		
-		//create a transition list --> add all the 'ends' first
-		List<StateTransition> newTransitions = new ArrayList<StateTransition>();
-		//loop and add
-		for (StateTransition transition : stateTransitions) {
-			if (transition.isEnd()) {
-				newTransitions.add(transition);
 			}//end if
 		}//end for
-		//go through and add this 'level' of steps
-		for (int position=0;position<stepNames.size();position++) {
-			logger.debug("processing step name {}",stepNames.get(position));			
-			//set into the statetransition
-			//process if it's a split (to see if the next steps inline are internal to it)
-			if ((position+1) == stepNames.size()) {//last one --> just add as an end state
-				String current = stepNames.get(position);
-				//last one
-				if (!split && current != null) {
-					logger.debug("adding at last {}",stateMap.get(current));
-					newTransitions.add(StateTransition.createEndStateTransition(stateMap.get(current)));
-					changeCount++;
-				}//end if
+		//now check if the stepNames are at this level and 'reorganize'
+		for (int i=0;i<stepNames.size();i++) {
+			logger.debug("processing {}",stepNames.get(i));
+			String current = stepNames.get(i);
+			State state = stateMap.get(current);
+			if (state == null) {
+				//map
+				state = stateMap.get(stateNameMap.get(current));
+			}//end if
+			//if the state is STILL null --> then not at this level
+			if (state == null) {
+				logger.debug("adding to remainderNames {}",stepNames.get(i));
+				remainderNames.add(stepNames.get(i));
+				continue;//continue
+			}//end if
+			//now get the next
+			if ((i+1) == stepNames.size()) {
+				//no next --> it's an end
+				stateTransitions.add(StateTransition.createEndStateTransition(state));
+				logger.debug("added {} at the end",current);
 			} else {
-				//first and more --> get
-				String current = stepNames.get(position);
-				String next = stepNames.get(position+1);
-				//check if the 'next' is in THIS flow
-				if (!stateNameMap.containsKey(next)) {
-					logger.debug("not in the map {} {}",next,stateNameMap);
-					next = null;
-				}//end if
-				//check if the names exists
-				if (!stateMap.containsKey(current)) {
-					logger.debug("name not found --> remapping current {}",current);
-					current = stateNameMap.get(current);
-				}//end if
+				//get 'next'
+				String next = stepNames.get(i + 1);//'next' in order
 				if (!stateMap.containsKey(next)) {
-					logger.debug("name not found --> remapping next {}",next);
-					next = stateNameMap.get(next);
-				}//end if
-				if (current == null) {
-					//can't remap --> possibly inner flow?
-					logger.warn("can't remap {} {}",current,next);
-					continue;//bypass this setting
-				}//end if
-				if (next == null && !split) {//NOT in a split --> allow for 'searching'
-					int loopCount = position+1;
-					//loop until gets the next
+					//need to 'loop' through the list and find the matching 'next'
+					int count = i + 1;
 					while (true) {
-						next = stepNames.get(loopCount);
-						if (next != null) {
+						next = stepNames.get(count);
+						if (stateMap.containsKey(next)) {
+							logger.debug("found it at position {}",count);
 							break;
-						} else if ((loopCount+1) == stepNames.size()) {
-							break;//finished the loop --> not found
+						} else if (stateMap.containsKey(stateNameMap.get(next))) {
+							next = stateNameMap.get(next);
+							logger.debug("found it at position [translated] {}",count);
+							break;
+						} else if ((count+1) == stepNames.size()) {
+							logger.error("got to the end without finding {} in {}",next,stateMap);
+							break;
 						}//end if
-						loopCount++;
+						count++;//increment
 					}//end while
-					//check if the 'next' is actually at this 'level'
-					if (!stateMap.containsKey(next)) {
-						//is NOT at this 'level' continue
-						next = null;//reset
-					}//end if
-				}
-				if (current != null && next == null && split) {
-					logger.debug("adding at last in a split {}",stateMap.get(current));
-					newTransitions.add(StateTransition.createEndStateTransition(stateMap.get(current)));
-					changeCount++;
-				} else if (changeCount == 0) {//set in the 'first' position
-					logger.debug("adding first {} {}",stateMap.get(current),next);
-					newTransitions.add(0,StateTransition.createStateTransition(stateMap.get(current), next));
-					changeCount++;
+				}//end if
+				//add in position 0
+				if (stateTransitions.isEmpty()) {
+					logger.debug("adding {} at the beginning",current);
+					stateTransitions.add(0, StateTransition.createStateTransition(state, next));
 				} else {
-					//create
-					logger.debug("adding {} {}",stateMap.get(current),next);
-					newTransitions.add(position,StateTransition.createStateTransition(stateMap.get(current), next));
-					changeCount++;
+					logger.debug("adding {} at {}",current,i);
+					stateTransitions.add(i, StateTransition.createStateTransition(state, next));
 				}//end if
 			}//end if
 		}//end for
-		if (changeCount != stepNames.size()) {
-			logger.debug("doesn't match - and do the splits");
+		if (remainderNames.isEmpty()) {
+			//nothing was added to the next, it's 'done' - clean up the list
+			stepNames = new ArrayList<String>();
+		} else {
+			logger.debug("possible embedded flow --> can't manage as need to rebuild a final object");
 			for (State state : stateMap.values()) {
+				//check if it's a flow
 				if (state instanceof SplitState) {
-					//get the flow and process
-					for (Flow splitFlow : ((SplitState)state).getFlows()) {
-						logger.debug("processing flow before {}",((SimpleFlow)flow).getStates());
-						this.resetFlow(splitFlow, stepNames,Boolean.TRUE);
-						logger.debug("after processing flow {}",((SimpleFlow)flow).getStates());
+					Collection<Flow> flows = new ArrayList<Flow>();
+					//process the 'flow'
+					for (Flow splitflow : ((SplitState)state).getFlows()) {
+						if (stepNames != null) {
+							flows.add(changeFlow(splitflow, remainderNames));
+						} else {
+							flows.add(splitflow);
+						}//end if
 					}//end for
 				}//end if
 			}//end for
 		}//end if
+		//before adding endstates
+		logger.debug("before end states {}",stateTransitions);
+		//now we add all the others
+		List<StateTransition> existingTransitions = getStateTransitions(flow);
+		for (StateTransition existing : existingTransitions) {
+			if (existing.isEnd()) {
+				stateTransitions.add(existing);
+			}//end if
+		}//end for
+		logger.debug("after end states {}",stateTransitions);
 		//set back
-		((SimpleFlow)flow).setStateTransitions(newTransitions);
-		((SimpleFlow)flow).afterPropertiesSet();	
+		((SimpleFlow)flow).setStateTransitions(stateTransitions);
+		((SimpleFlow)flow).afterPropertiesSet();
+		
 		//show
-		logger.debug("after [split] {} {}",split,((SimpleFlow)flow).getStates());
+		logger.debug("after completing flow {}",((SimpleFlow)flow).getStates());
+		for (State state : ((SimpleFlow)flow).getStates()) {
+			if (state instanceof SplitState) {
+				logger.debug("split state after {} {}",Objects.hashCode(state),((SplitState) state).getFlows());
+			}//end if
+		}//end for
+		//return
+		return flow;
 	}
+
 	
 	@SuppressWarnings("unchecked")
 	private List<StateTransition> getStateTransitions(Flow flow) throws Exception {
