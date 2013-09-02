@@ -1,0 +1,148 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<beans xmlns="http://www.springframework.org/schema/beans"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xmlns:batch="http://www.springframework.org/schema/batch"
+	xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans.xsd
+		http://www.springframework.org/schema/batch http://www.springframework.org/schema/batch/spring-batch.xsd">
+
+	<batch:job id="simpleJob1">
+		<batch:step id="simpleJob1.step0" next="simpleJob1.step1">
+			<batch:tasklet>
+				<bean class="org.springframework.batch.core.step.tasklet.MethodInvokingTaskletAdapter">
+					<property name="targetObject">
+						<bean class="java.lang.String">
+							<constructor-arg value="hello world"/>
+						</bean>
+					</property>
+					<property name="targetMethod" value="length"/>
+				</bean>
+			</batch:tasklet>
+		</batch:step>
+		<batch:step id="simpleJob1.step1" next="simpleJob1.step2">
+			<batch:tasklet>
+				<bean class="org.springframework.batch.core.step.tasklet.MethodInvokingTaskletAdapter">
+					<property name="targetObject">
+						<bean class="java.lang.String">
+							<constructor-arg value="hello world"/>
+						</bean>
+					</property>
+					<property name="targetMethod" value="length"/>
+				</bean>
+			</batch:tasklet>
+		</batch:step>
+		<batch:step id="simpleJob1.step2" next="simpleJob1.step3">
+			<batch:tasklet>
+				<bean class="org.springframework.batch.core.step.tasklet.MethodInvokingTaskletAdapter">
+					<property name="targetObject">
+						<bean class="java.lang.String">
+							<constructor-arg value="hello world"/>
+						</bean>
+					</property>
+					<property name="targetMethod" value="length"/>
+				</bean>
+			</batch:tasklet>
+		</batch:step>
+		<batch:step id="simpleJob1.step3">
+			<batch:tasklet>
+				<bean class="org.springframework.batch.core.step.tasklet.MethodInvokingTaskletAdapter">
+					<property name="targetObject">
+						<bean class="java.lang.String">
+							<constructor-arg value="hello world"/>
+						</bean>
+					</property>
+					<property name="targetMethod" value="length"/>
+				</bean>
+			</batch:tasklet>
+		</batch:step>						
+	</batch:job>
+	
+	<batch:job id="deciderJob1">
+		<batch:step id="deciderJob1.step1" next="deciderJob1.decider1">
+			<batch:tasklet>
+				<bean class="org.springframework.batch.core.step.tasklet.MethodInvokingTaskletAdapter">
+					<property name="targetObject">
+						<bean class="java.lang.String">
+							<constructor-arg value="hello world"/>
+						</bean>
+					</property>
+					<property name="targetMethod" value="length"/>
+				</bean>
+			</batch:tasklet>		
+		</batch:step>
+		<batch:decision decider="simpleDecider" id="deciderJob1.decider1">
+			<batch:next on="COMPLETED" to="deciderJob1.step2"/>
+		</batch:decision>
+		<batch:step id="deciderJob1.step2">
+			<batch:tasklet>
+				<bean class="org.springframework.batch.core.step.tasklet.MethodInvokingTaskletAdapter">
+					<property name="targetObject">
+						<bean class="java.lang.String">
+							<constructor-arg value="hello world"/>
+						</bean>
+					</property>
+					<property name="targetMethod" value="length"/>
+				</bean>
+			</batch:tasklet>		
+		</batch:step>		
+	</batch:job>
+
+	<bean id="simpleDecider" class="io.springbatch.admin.execution.test.support.SimpleDecider"/>
+
+	<batch:job id="splitJob1">
+		<batch:step id="splitJob1.step1" next="splitJob1.split">
+			<batch:tasklet>
+				<bean class="org.springframework.batch.core.step.tasklet.MethodInvokingTaskletAdapter">
+					<property name="targetObject">
+						<bean class="java.lang.String">
+							<constructor-arg value="hello world"/>
+						</bean>
+					</property>
+					<property name="targetMethod" value="length"/>
+				</bean>
+			</batch:tasklet>		
+		</batch:step>
+		<batch:split id="splitJob1.split">
+			<batch:flow>
+				<batch:step id="splitJob1.split.step1" next="splitJob1.split.step2">
+					<batch:tasklet>
+						<bean class="org.springframework.batch.core.step.tasklet.MethodInvokingTaskletAdapter">
+							<property name="targetObject">
+								<bean class="java.lang.String">
+									<constructor-arg value="hello world"/>
+								</bean>
+							</property>
+							<property name="targetMethod" value="length"/>
+						</bean>
+					</batch:tasklet>		
+				</batch:step>
+				<batch:step id="splitJob1.split.step2">
+					<batch:tasklet>
+						<bean class="org.springframework.batch.core.step.tasklet.MethodInvokingTaskletAdapter">
+							<property name="targetObject">
+								<bean class="java.lang.String">
+									<constructor-arg value="hello world"/>
+								</bean>
+							</property>
+							<property name="targetMethod" value="length"/>
+						</bean>
+					</batch:tasklet>		
+				</batch:step>		
+			</batch:flow>
+			<batch:flow>
+				<batch:step id="splitJob1.split.step3">
+					<batch:tasklet>
+						<bean class="org.springframework.batch.core.step.tasklet.MethodInvokingTaskletAdapter">
+							<property name="targetObject">
+								<bean class="java.lang.String">
+									<constructor-arg value="hello world"/>
+								</bean>
+							</property>
+							<property name="targetMethod" value="length"/>
+						</bean>
+					</batch:tasklet>		
+				</batch:step>			
+			</batch:flow>			
+		</batch:split>	
+	</batch:job>	
+
+</beans>
